@@ -88,6 +88,8 @@ in
           full = {
             enable = true;
             compressionLevel = 1;
+            # tiny, so the prune service actually deletes something in the test
+            maxArchiveSize = 1048576; # 1 MiB
           };
           lowData = {
             enable = true;

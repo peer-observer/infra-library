@@ -11,6 +11,58 @@ let
   CONSTANTS = import ../constants.nix;
   baseOptions = (import ../base/base.nix { inherit config lib pkgs; }).options;
   NATS_PORT = 4222;
+
+  archiverCfg = config.peer-observer.node.peer-observer.tools.archiver;
+
+  # The archiver instance name. It is the archiver's --base-name, so it is also
+  # the prefix of every archive file the instance writes.
+  archiverName = suffix: "${archiverCfg.baseName}-${config.peer-observer.base.name}${suffix}";
+
+  # Every event category, so that the low-data archiver is a full archive rather
+  # than a subset. The archiver records everything only when no category is
+  # selected at all, which --low-data cannot do, as it requires an explicit
+  # "messages".
+  allArchiverEvents = [
+    "messages"
+    "connections"
+    "mempool"
+    "validation"
+    "rpc"
+    "p2p-extractor"
+    "log-extractor"
+    "ipc-extractor"
+  ];
+
+  # The predefined archiver variants that are turned on, as
+  # { suffix, cfg, extra } where `extra` carries the event filters that make the
+  # variant what it is.
+  enabledArchivers = lib.filter (variant: variant.cfg.enable) [
+    {
+      suffix = "";
+      cfg = archiverCfg.full;
+      extra = { };
+    }
+    {
+      suffix = "-low-data";
+      cfg = archiverCfg.lowData;
+      extra = {
+        events = allArchiverEvents;
+        lowData = true;
+      };
+    }
+    {
+      suffix = "-addr-relay";
+      cfg = archiverCfg.addrRelay;
+      extra = {
+        events = [
+          "addr-relay"
+          "connections-with-handshakes"
+        ];
+      };
+    }
+  ];
+
+  anyArchiverEnabled = enabledArchivers != [ ];
 in
 {
   imports = [ ./logrotate.nix ];
@@ -182,6 +234,23 @@ in
               example = 3;
               description = "Zstd compression level (0 = no compression, 1-22)";
             };
+
+            maxArchiveSize = mkOption {
+              type = types.ints.positive;
+              default = 5368709120; # 5 GiB
+              example = 53687091200; # 50 GiB
+              description = ''
+                How many bytes of archives this archiver may keep on the node.
+                Hourly, the oldest archives of this archiver are deleted until
+                the total is back under the budget. The archiver it belongs to
+                writes at its own rate, so each one gets its own budget.
+
+                The newest archive is never deleted, as the archiver is still
+                writing to it. Deletion happens in whole files, so the actual
+                usage sits below the budget by up to one file, which is
+                `maxFileSize` in the peer-observer module.
+              '';
+            };
           };
 
           lowData = {
@@ -197,6 +266,23 @@ in
               example = 3;
               description = "Zstd compression level (0 = no compression, 1-22)";
             };
+
+            maxArchiveSize = mkOption {
+              type = types.ints.positive;
+              default = 5368709120; # 5 GiB
+              example = 53687091200; # 50 GiB
+              description = ''
+                How many bytes of archives this archiver may keep on the node.
+                Hourly, the oldest archives of this archiver are deleted until
+                the total is back under the budget. The archiver it belongs to
+                writes at its own rate, so each one gets its own budget.
+
+                The newest archive is never deleted, as the archiver is still
+                writing to it. Deletion happens in whole files, so the actual
+                usage sits below the budget by up to one file, which is
+                `maxFileSize` in the peer-observer module.
+              '';
+            };
           };
 
           addrRelay = {
@@ -211,6 +297,23 @@ in
               default = 18;
               example = 3;
               description = "Zstd compression level (0 = no compression, 1-22)";
+            };
+
+            maxArchiveSize = mkOption {
+              type = types.ints.positive;
+              default = 5368709120; # 5 GiB
+              example = 53687091200; # 50 GiB
+              description = ''
+                How many bytes of archives this archiver may keep on the node.
+                Hourly, the oldest archives of this archiver are deleted until
+                the total is back under the budget. The archiver it belongs to
+                writes at its own rate, so each one gets its own budget.
+
+                The newest archive is never deleted, as the archiver is still
+                writing to it. Deletion happens in whole files, so the actual
+                usage sits below the budget by up to one file, which is
+                `maxFileSize` in the peer-observer module.
+              '';
             };
           };
         };
@@ -511,47 +614,17 @@ in
         # The attribute name is the archiver's --base-name and part of its unit
         # name. All instances share one output directory, since the archives are
         # separated by that prefix.
-        archivers =
-          let
-            archiverCfg = config.peer-observer.node.peer-observer.tools.archiver;
-            name = suffix: "${archiverCfg.baseName}-${config.peer-observer.base.name}${suffix}";
-            common = variantCfg: {
+        archivers = lib.listToAttrs (
+          map (variant: {
+            name = archiverName variant.suffix;
+            value = {
               enable = true;
-              outputDir = "/data/peer-observer-archives/";
-              compressionLevel = variantCfg.compressionLevel;
-            };
-            # Every category, so that this is a full archive rather than a
-            # subset. The archiver records everything only when no category is
-            # selected at all, which is not an option here because --low-data
-            # requires an explicit "messages".
-            allEvents = [
-              "messages"
-              "connections"
-              "mempool"
-              "validation"
-              "rpc"
-              "p2p-extractor"
-              "log-extractor"
-              "ipc-extractor"
-            ];
-          in
-          (lib.optionalAttrs archiverCfg.full.enable {
-            ${name ""} = common archiverCfg.full;
-          })
-          // (lib.optionalAttrs archiverCfg.lowData.enable {
-            ${name "-low-data"} = (common archiverCfg.lowData) // {
-              events = allEvents;
-              lowData = true;
-            };
-          })
-          // (lib.optionalAttrs archiverCfg.addrRelay.enable {
-            ${name "-addr-relay"} = (common archiverCfg.addrRelay) // {
-              events = [
-                "addr-relay"
-                "connections-with-handshakes"
-              ];
-            };
-          });
+              outputDir = "${CONSTANTS.PEER_OBSERVER_ARCHIVES_DIR}/";
+              compressionLevel = variant.cfg.compressionLevel;
+            }
+            // variant.extra;
+          }) enabledArchivers
+        );
       };
     };
 
@@ -670,6 +743,54 @@ in
           };
         };
 
+    # The peer-observer module creates the archive directory as 0770
+    # peerobserver:peerobserver, so nginx needs to be in the group to serve the
+    # directory listing and the files themselves.
+    users.users.nginx.extraGroups = lib.optional anyArchiverEnabled "peerobserver";
+
+    # The archiver rotates on file size and never deletes anything, so keep each
+    # instance inside its own disk budget. Deleting the newest file is skipped,
+    # since that is the one the archiver is currently writing to.
+    systemd.services."peer-observer-archive-prune" = mkIf anyArchiverEnabled {
+      script = ''
+        set -eu
+
+        prune() {
+          prefix="$1"
+          budget="$2"
+          total=0
+          kept=0
+          find ${CONSTANTS.PEER_OBSERVER_ARCHIVES_DIR} -maxdepth 1 -type f \
+            -name "$prefix.*.bin*" -printf '%T@\t%s\t%p\n' \
+            | sort -rn \
+            | while IFS="$(printf '\t')" read -r _mtime size path; do
+                total=$((total + size))
+                kept=$((kept + 1))
+                if [ "$kept" -gt 1 ] && [ "$total" -gt "$budget" ]; then
+                  echo "deleting $path, over the $budget byte budget for $prefix"
+                  rm -f -- "$path"
+                fi
+              done
+        }
+
+        ${lib.concatMapStringsSep "\n" (
+          variant:
+          "prune ${lib.escapeShellArg (archiverName variant.suffix)} ${toString variant.cfg.maxArchiveSize}"
+        ) enabledArchivers}
+      '';
+      serviceConfig = {
+        Type = "oneshot";
+      };
+    };
+
+    systemd.timers."peer-observer-archive-prune" = mkIf anyArchiverEnabled {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "hourly";
+        Persistent = true;
+      };
+    };
+
     services.bitcoind-profiling = mkIf config.peer-observer.node.samply-continuous-profiling {
       enable = true;
       package = config.peer-observer.base.b10c-pkgs.samply;
@@ -739,6 +860,16 @@ in
                   limit_rate 500k; # kB/s
                 '';
               };
+
+          # access to peer-observer archives the node hasn't pruned yet.
+          "${CONSTANTS.NODE_TO_WEBSERVER_PATH_PEER_OBSERVER_ARCHIVES}" = mkIf anyArchiverEnabled {
+            alias = "${CONSTANTS.PEER_OBSERVER_ARCHIVES_DIR}/";
+            extraConfig = ''
+              autoindex on;
+              autoindex_exact_size off;
+              limit_rate 500k; # kB/s
+            '';
+          };
 
           # access to samply profile files the node hasn't deleted yet.
           "${CONSTANTS.NODE_TO_WEBSERVER_PATH_PROFILING}" =
