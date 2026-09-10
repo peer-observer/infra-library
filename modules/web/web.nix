@@ -84,6 +84,24 @@ let
       '';
     }));
 
+  # Only nodes with at least one peer-observer archiver enabled expose the
+  # archives endpoint.
+  mkArchivesLocation =
+    name: host:
+    (lib.nameValuePair ("/peer-observer-archives/${name}/") ({
+      proxyPass = "http://${host.wireguard.ip}:${toString CONSTANTS.NODE_TO_WEBSERVER_PORT}${CONSTANTS.NODE_TO_WEBSERVER_PATH_PEER_OBSERVER_ARCHIVES}";
+      extraConfig = ''
+        limit_rate 500k; # kB/s
+      '';
+    }));
+
+  # true if any of the node's predefined archiver variants is turned on.
+  hasArchivers =
+    host:
+    host.peer-observer.tools.archiver.full.enable
+    || host.peer-observer.tools.archiver.lowData.enable
+    || host.peer-observer.tools.archiver.addrRelay.enable;
+
   mkScrapeConfigs =
     hosts: port:
     (lib.mapAttrsToList (name: host: {
@@ -365,6 +383,9 @@ in
           ))
           // (lib.mapAttrs' mkPeersDatSnapshotsLocation (
             lib.filterAttrs (name: host: host.bitcoind.peersDatSnapshots.enable) config.infra.nodes
+          ))
+          // (lib.mapAttrs' mkArchivesLocation (
+            lib.filterAttrs (name: host: hasArchivers host) config.infra.nodes
           ));
         };
 

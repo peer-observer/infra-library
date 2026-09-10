@@ -485,6 +485,55 @@ pkgs.testers.runNixOSTest {
       print(f"{command}: {output}")
       assert_log("HTTP/1.1 200 OK", output)
 
+    def check_peer_observer_archives():
+      archive_dir = "${CONSTANTS.PEER_OBSERVER_ARCHIVES_DIR}"
+
+      print("checking the webserver can fetch an archive from node1 via wireguard")
+      archive_name = node1.succeed(
+        f"ls {archive_dir}/infra-test-node1.*.bin* | head -1 | xargs basename"
+      ).strip()
+      command = f"curl -s -I ${infraConfig.nodes.node1.wireguard.ip}:${toString CONSTANTS.NODE_TO_WEBSERVER_PORT}${CONSTANTS.NODE_TO_WEBSERVER_PATH_PEER_OBSERVER_ARCHIVES}{archive_name}"
+      output = web1.succeed(command)
+      print(f"{command}: {output}")
+      assert_log("HTTP/1.1 200 OK", output)
+
+      print("checking the node serves an autoindex listing of the archives")
+      command = "curl -s ${infraConfig.nodes.node1.wireguard.ip}:${toString CONSTANTS.NODE_TO_WEBSERVER_PORT}${CONSTANTS.NODE_TO_WEBSERVER_PATH_PEER_OBSERVER_ARCHIVES}"
+      output = web1.succeed(command)
+      print(f"{command}: {output}")
+      assert_log("infra-test-node1-low-data.", output)
+      assert_log("infra-test-node1-addr-relay.", output)
+
+      print("checking the FULL_ACCESS frontend proxies an archive from node1")
+      command = f"curl -s -I 127.0.0.1:${toString CONSTANTS.NGINX_INTERNAL_FULL_ACCESS_PORT}/peer-observer-archives/node1/{archive_name}"
+      output = web1.succeed(command)
+      print(f"{command}: {output}")
+      assert_log("HTTP/1.1 200 OK", output)
+
+      # node1 gives the 'full' archiver a 1 MiB budget. Plant two oversized,
+      # older archives for it and check the prune service removes them while
+      # leaving the newest one alone, since the archiver is still writing to it.
+      print("checking the prune service enforces the per-archiver size budget")
+      for stamp in ["20200101-000000-000", "20200102-000000-000"]:
+        node1.succeed(f"truncate -s 1M {archive_dir}/infra-test-node1.{stamp}.bin.zst")
+        node1.succeed(f"touch -d '2020-01-01' {archive_dir}/infra-test-node1.{stamp}.bin.zst")
+
+      node1.succeed("systemctl start peer-observer-archive-prune.service")
+
+      output = node1.succeed(f"ls {archive_dir}")
+      print(f"archives after pruning: {output}")
+      for stamp in ["20200101-000000-000", "20200102-000000-000"]:
+        assert f"infra-test-node1.{stamp}.bin.zst" not in output, (
+          f"the prune service should have deleted the planted {stamp} archive"
+        )
+      # the newest 'full' archive survives, and so do the other two archivers,
+      # whose own budgets are nowhere near exhausted. Their names share the
+      # 'infra-test-node1' prefix, so this also checks the prune only matches
+      # its own archiver.
+      assert archive_name in output, "the newest archive must not be deleted"
+      assert_log("infra-test-node1-low-data.", output)
+      assert_log("infra-test-node1-addr-relay.", output)
+
     def check_peers_dat_snapshots():
       print("triggering peers-dat-snapshot.service on node1")
       node1.succeed("systemctl start peers-dat-snapshot.service")
@@ -639,6 +688,8 @@ pkgs.testers.runNixOSTest {
     check_addrman_snapshots()
 
     check_peers_dat_snapshots()
+
+    check_peer_observer_archives()
 
     check_bitcoind_rpc_connectivity()
 

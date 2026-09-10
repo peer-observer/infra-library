@@ -8,6 +8,9 @@ rec {
   NODE_TO_WEBSERVER_PATH_DEBUG_LOGS = "/debug-logs/";
   NODE_TO_WEBSERVER_PATH_ADDRMAN_SNAPSHOTS = "/addrman-snapshots/";
   NODE_TO_WEBSERVER_PATH_PEERS_DAT_SNAPSHOTS = "/peers-dat-snapshots/";
+  # Not in NODE_TO_WEBSERVER_PATHS below: only nodes with a peer-observer
+  # archiver enabled serve this, like the profiling path.
+  NODE_TO_WEBSERVER_PATH_PEER_OBSERVER_ARCHIVES = "/peer-observer-archives/";
   NODE_TO_WEBSERVER_PATH_PROFILING = "/samply-profiling/";
   NODE_TO_WEBSERVER_PATH_PEER_OBSERVER_RPC_EXTRACTOR_METRICS = "/peer-observer-rpc-extractor-metrics/";
   NODE_TO_WEBSERVER_PATH_PEER_OBSERVER_IPC_EXTRACTOR_METRICS = "/peer-observer-ipc-extractor-metrics/";
@@ -80,6 +83,11 @@ rec {
 
   # Place where peers.dat snapshots are stored
   PEERS_DAT_SNAPSHOTS_DIR = "/data/peers-dat-snapshots";
+
+  # Place where the peer-observer archiver instances write their archives.
+  # All instances share this directory; their archives are separated by the
+  # file name prefix, which is the archiver instance name.
+  PEER_OBSERVER_ARCHIVES_DIR = "/data/peer-observer-archives";
 
   # A UDP port exposed by the web hosts for nodes to connect to them.
   WIREGUARD_INTERFACE_PORT = 51820;
