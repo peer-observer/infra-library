@@ -607,7 +607,32 @@ pkgs.testers.runNixOSTest {
     node1.wait_for_unit("peer-observer-tool-alerts.service")
     node2.wait_for_unit("peer-observer-tool-alerts.service")
 
-    node1.wait_for_unit("peer-observer-tool-archiver.service")
+    # node1 runs all three predefined archivers. Their names are
+    # "<baseName>-<node name>" plus a variant suffix.
+    for archiver in ["infra-test-node1", "infra-test-node1-low-data", "infra-test-node1-addr-relay"]:
+        node1.wait_for_unit(f"peer-observer-tool-archiver-{archiver}.service")
+
+    # each archiver writes files carrying its own name as the prefix
+    for archiver in ["infra-test-node1", "infra-test-node1-low-data", "infra-test-node1-addr-relay"]:
+        node1.wait_until_succeeds(
+            f"test $(find /data/peer-observer-archives -maxdepth 1 -type f "
+            f"-name '{archiver}.*.bin*' | wc -l) -ge 1",
+            timeout=30,
+        )
+
+    # the low-data and addr-relay archivers got the right event filters
+    node1.succeed(
+        "journalctl -u peer-observer-tool-archiver-infra-test-node1-low-data.service --no-pager "
+        "| grep -F 'archiving in low-data mode: true'"
+    )
+    node1.succeed(
+        "journalctl -u peer-observer-tool-archiver-infra-test-node1-addr-relay.service --no-pager "
+        "| grep -E 'archiving addr-relay messages: +true'"
+    )
+    node1.succeed(
+        "journalctl -u peer-observer-tool-archiver-infra-test-node1-addr-relay.service --no-pager "
+        "| grep -E 'archiving connections-with-handshakes: +true'"
+    )
 
     wait_until_nodes_connected()
 
