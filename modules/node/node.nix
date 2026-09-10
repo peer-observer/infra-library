@@ -161,22 +161,58 @@ in
       };
       tools = {
         archiver = {
-          enable = lib.mkEnableOption "the peer-observer archiver";
-
           baseName = mkOption {
             type = types.str;
-            default = null;
             example = "demo-peer-observer";
-            description = "Base name for archive files (e.g., 'mainnet' -> '[node-name]-mainnet.<timestamp>.bin.zst')";
+            description = ''
+              Base name for archive files. The node name and, for the variants
+              below, a variant suffix are appended to it, e.g. 'mainnet' ->
+              '[node-name]-mainnet.<timestamp>.bin.zst'.
+
+              Required as soon as one of the archivers below is enabled.
+            '';
           };
 
-          compressionLevel = mkOption {
-            type = types.ints.between 0 22;
-            default = 9;
-            example = 3;
-            description = "Zstd compression level (0 = no compression, 1-22)";
+          full = {
+            enable = lib.mkEnableOption "an archiver recording every event";
+
+            compressionLevel = mkOption {
+              type = types.ints.between 0 22;
+              default = 18;
+              example = 3;
+              description = "Zstd compression level (0 = no compression, 1-22)";
+            };
           };
 
+          lowData = {
+            enable = lib.mkEnableOption ''
+              an archiver recording every event, but without raw transaction
+              data. Transactions keep their txid and wtxid, blocks keep only
+              their header. Writes files suffixed '-low-data'
+            '';
+
+            compressionLevel = mkOption {
+              type = types.ints.between 0 22;
+              default = 18;
+              example = 3;
+              description = "Zstd compression level (0 = no compression, 1-22)";
+            };
+          };
+
+          addrRelay = {
+            enable = lib.mkEnableOption ''
+              an archiver recording address-relay messages (getaddr, addr,
+              addrv2) and P2P connections together with the version messages
+              of their handshake. Writes files suffixed '-addr-relay'
+            '';
+
+            compressionLevel = mkOption {
+              type = types.ints.between 0 22;
+              default = 18;
+              example = 3;
+              description = "Zstd compression level (0 = no compression, 1-22)";
+            };
+          };
         };
       };
 
@@ -472,12 +508,50 @@ in
           enable = true;
         };
 
-        archiver = {
-          enable = config.peer-observer.node.peer-observer.tools.archiver.enable;
-          outputDir = "/data/peer-observer-archives/";
-          baseName = "${config.peer-observer.node.peer-observer.tools.archiver.baseName}-${config.peer-observer.base.name}";
-          compressionLevel = config.peer-observer.node.peer-observer.tools.archiver.compressionLevel;
-        };
+        # The attribute name is the archiver's --base-name and part of its unit
+        # name. All instances share one output directory, since the archives are
+        # separated by that prefix.
+        archivers =
+          let
+            archiverCfg = config.peer-observer.node.peer-observer.tools.archiver;
+            name = suffix: "${archiverCfg.baseName}-${config.peer-observer.base.name}${suffix}";
+            common = variantCfg: {
+              enable = true;
+              outputDir = "/data/peer-observer-archives/";
+              compressionLevel = variantCfg.compressionLevel;
+            };
+            # Every category, so that this is a full archive rather than a
+            # subset. The archiver records everything only when no category is
+            # selected at all, which is not an option here because --low-data
+            # requires an explicit "messages".
+            allEvents = [
+              "messages"
+              "connections"
+              "mempool"
+              "validation"
+              "rpc"
+              "p2p-extractor"
+              "log-extractor"
+              "ipc-extractor"
+            ];
+          in
+          (lib.optionalAttrs archiverCfg.full.enable {
+            ${name ""} = common archiverCfg.full;
+          })
+          // (lib.optionalAttrs archiverCfg.lowData.enable {
+            ${name "-low-data"} = (common archiverCfg.lowData) // {
+              events = allEvents;
+              lowData = true;
+            };
+          })
+          // (lib.optionalAttrs archiverCfg.addrRelay.enable {
+            ${name "-addr-relay"} = (common archiverCfg.addrRelay) // {
+              events = [
+                "addr-relay"
+                "connections-with-handshakes"
+              ];
+            };
+          });
       };
     };
 

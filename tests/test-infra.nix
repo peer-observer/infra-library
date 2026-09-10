@@ -84,9 +84,19 @@ in
       peer-observer = {
         extractors.logs.enable = true;
         tools.archiver = {
-          enable = true;
           baseName = "infra-test";
-          compressionLevel = 1;
+          full = {
+            enable = true;
+            compressionLevel = 1;
+          };
+          lowData = {
+            enable = true;
+            compressionLevel = 1;
+          };
+          addrRelay = {
+            enable = true;
+            compressionLevel = 1;
+          };
         };
         addrLookup = true;
       };
