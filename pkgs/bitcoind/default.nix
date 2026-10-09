@@ -20,10 +20,10 @@
   fakeVersionMajor ? "31",
   fakeVersionMinor ? "0",
   # optional args specifiying which commit, branch and repo to use
-  gitURL ? "https://github.com/bitcoin/bitcoin.git",
-  gitBranch ? "master",
-  # https://github.com/bitcoin/bitcoin/commit/840a7bd731e35fc5a10181fc9aa0890363e8ddf4
-  gitCommit ? "840a7bd731e35fc5a10181fc9aa0890363e8ddf4", # master on 2026-09-10 (day of v32.0 splitoff)
+  gitURL ? "https://github.com/0xB10C/bitcoin.git",
+  gitBranch ? "v32.0rc3+70016",
+  # https://github.com/0xB10C/bitcoin/commit/dcae8d62c14f04e93c87da627f8b26cf8a5de924
+  gitCommit ? "dcae8d62c14f04e93c87da627f8b26cf8a5de924", # v32.0rc3 + protocol version 70016
   sanitizersAddressUndefined ? false,
   sanitizersThread ? false,
   # by default, symlink the bitcoin-node binary into the location of
