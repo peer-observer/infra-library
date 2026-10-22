@@ -95,6 +95,17 @@ let
       '';
     }));
 
+  # Only nodes with samply continuous profiling enabled expose the profiling
+  # endpoint.
+  mkProfilingLocation =
+    name: host:
+    (lib.nameValuePair ("/samply-profiling/${name}/") ({
+      proxyPass = "http://${host.wireguard.ip}:${toString CONSTANTS.NODE_TO_WEBSERVER_PORT}${CONSTANTS.NODE_TO_WEBSERVER_PATH_PROFILING}";
+      extraConfig = ''
+        limit_rate 500k; # kB/s
+      '';
+    }));
+
   # true if any of the node's predefined archiver variants is turned on.
   hasArchivers =
     host:
@@ -386,6 +397,9 @@ in
           ))
           // (lib.mapAttrs' mkArchivesLocation (
             lib.filterAttrs (name: host: hasArchivers host) config.infra.nodes
+          ))
+          // (lib.mapAttrs' mkProfilingLocation (
+            lib.filterAttrs (name: host: host.samply-continuous-profiling) config.infra.nodes
           ));
         };
 

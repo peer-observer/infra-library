@@ -222,6 +222,34 @@ pkgs.testers.runNixOSTest {
       print(f"{command}: {output}")
       assert_log("HTTP/1.1 200 OK", output)
 
+      print("checking the FULL_ACCESS frontend proxies a profile file from node1")
+      command = f"curl -s -I 127.0.0.1:${toString CONSTANTS.NGINX_INTERNAL_FULL_ACCESS_PORT}/samply-profiling/node1/{profile_name}"
+      output = web1.succeed(command)
+      print(f"{command}: {output}")
+      assert_log("HTTP/1.1 200 OK", output)
+
+      print("checking the FULL_ACCESS frontend serves an autoindex listing for node1")
+      command = "curl -s 127.0.0.1:${toString CONSTANTS.NGINX_INTERNAL_FULL_ACCESS_PORT}/samply-profiling/node1/"
+      output = web1.succeed(command)
+      print(f"{command}: {output}")
+      assert_log(profile_name, output)
+
+      # node2 has samply-continuous-profiling=false, so it gets neither a
+      # profiling location on the webserver nor a button on the index page.
+      print("checking node2 has no profiling endpoint on the FULL_ACCESS frontend")
+      command = "curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:${toString CONSTANTS.NGINX_INTERNAL_FULL_ACCESS_PORT}/samply-profiling/node2/"
+      output = web1.succeed(command)
+      print(f"{command}: {output}")
+      assert output.strip() == "404", f"expected 404 for node2, got {output!r}"
+
+      print("checking the index page links the profiles of node1 only")
+      command = "curl -s 127.0.0.1:${toString CONSTANTS.NGINX_INTERNAL_FULL_ACCESS_PORT}"
+      output = web1.succeed(command)
+      assert_log("/samply-profiling/node1/", output)
+      assert "/samply-profiling/node2/" not in output, (
+        "node2 must not have a samply profiles button"
+      )
+
       print("triggering bitcoind-profiling-cleanup.service on node1")
       node1.succeed("systemctl start bitcoind-profiling-cleanup.service")
 

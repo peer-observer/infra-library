@@ -177,6 +177,11 @@ let
                   if limited then "nice try" else "/peers-dat-snapshots/${name}/"
                 }" class="btn btn-outline-secondary ${lib.optionalString limited "disabled"}">peers.dat snapshots</a>
               ''}
+              ${lib.optionalString host.samply-continuous-profiling ''
+                <a href="${
+                  if limited then "nice try" else "/samply-profiling/${name}/"
+                }" class="btn btn-outline-secondary ${lib.optionalString limited "disabled"}">samply profiles</a>
+              ''}
             </div>
           </div>
         </div>
