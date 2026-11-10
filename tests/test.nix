@@ -643,6 +643,26 @@ pkgs.testers.runNixOSTest {
       print(f"{command}: {output}")
       assert_log("HTTP/1.1 200 OK", output)
 
+      # snapshotsToKeep is a count, so the prune has to delete by position and
+      # not by age: these planted snapshots are all far older than the real
+      # ones, yet most of them have to survive.
+      keep = ${toString infraConfig.nodes.node1.bitcoind.peerinfoSnapshots.snapshotsToKeep}
+      print(f"checking the prune keeps the newest {keep} snapshots")
+      for i in range(keep + 2):
+        planted = f"peerinfo-20260101T0000{i:02d}Z-planted.json.zst"
+        node1.succeed(
+          f"touch -d '2026-01-01 00:00:{i:02d}' ${CONSTANTS.PEERINFO_SNAPSHOTS_DIR}/{planted}"
+        )
+
+      node1.succeed("systemctl start peerinfo-snapshot.service")
+
+      count = int(node1.succeed("ls -1 ${CONSTANTS.PEERINFO_SNAPSHOTS_DIR} | wc -l").strip())
+      print(f"snapshots after pruning: {count}")
+      assert count == keep, f"expected {keep} snapshots after pruning, got {count}"
+      # the two oldest planted ones are the ones that had to go
+      node1.fail("ls ${CONSTANTS.PEERINFO_SNAPSHOTS_DIR}/peerinfo-20260101T000000Z-planted.json.zst")
+      node1.fail("ls ${CONSTANTS.PEERINFO_SNAPSHOTS_DIR}/peerinfo-20260101T000001Z-planted.json.zst")
+
     def check_sanitizer_suppressions():
       print("checking sanitizer env vars are set on node1 bitcoind (sanitizersAddressUndefined=true)")
       output = node1.succeed("systemctl show bitcoind-mainnet.service --property=Environment")

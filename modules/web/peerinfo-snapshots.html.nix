@@ -46,7 +46,11 @@ let
         <a href="/peerinfo-snapshots/${name}/">node ${name}</a>${
           lib.optionalString (flags != "") " (${flags})"
         }
-        (last ${toString host.bitcoind.peerinfoSnapshots.daysToKeep} days)
+        (${
+          lib.optionalString (
+            host.bitcoind.peerinfoSnapshots.onCalendar != "*-*-* 00,06,12,18:00:00"
+          ) "taken <code>${host.bitcoind.peerinfoSnapshots.onCalendar}</code>, "
+        }last ${toString host.bitcoind.peerinfoSnapshots.snapshotsToKeep} snapshots)
       </li>
     '';
 
@@ -70,7 +74,7 @@ stdenv.mkDerivation {
             <h1>peer-observer getpeerinfo snapshots</h1>
             <span>
               Snapshots of each node's <code>getpeerinfo</code> RPC output, taken
-              every six hours and compressed with zstd. While the
+              every six hours (unless noted otherwise) and compressed with zstd. While the
               <a href="/addrman-snapshots/">addrman snapshots</a> show which peers
               a node <em>knows</em>, these show which peers it was actually
               <em>connected to</em> at that point in time, including connection
