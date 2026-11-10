@@ -173,15 +173,15 @@ in
 
       peersDatSnapshots = {
         enable =
-          lib.mkEnableOption "periodic snapshots of the node's peers.dat file. Snapshots are compressed with zstd and stored weekly."
+          lib.mkEnableOption "periodic snapshots of the node's peers.dat file. Snapshots are compressed with zstd and stored daily."
           // {
             default = true;
           };
         snapshotsToKeep = lib.mkOption {
           type = lib.types.ints.u16;
-          description = "Number of weekly snapshots to keep on the server before deleting them.";
-          default = 26;
-          example = 4;
+          description = "Number of daily snapshots to keep on the server before deleting them.";
+          default = 30;
+          example = 7;
         };
       };
 
@@ -749,7 +749,7 @@ in
             # consistent point-in-time read even if bitcoind rewrites the file.
             ${pkgs.zstd}/bin/zstd -19 -o "$SNAPSHOT" < "$PEERS_DAT"
             find ${CONSTANTS.PEERS_DAT_SNAPSHOTS_DIR} -name "peers-*.dat.zst" \
-              -mtime +${toString (config.peer-observer.node.bitcoind.peersDatSnapshots.snapshotsToKeep * 7)} \
+              -mtime +${toString config.peer-observer.node.bitcoind.peersDatSnapshots.snapshotsToKeep} \
               -delete
           '';
           serviceConfig = {
@@ -762,7 +762,7 @@ in
         {
           wantedBy = [ "timers.target" ];
           timerConfig = {
-            OnCalendar = "weekly";
+            OnCalendar = "daily";
             Persistent = true;
           };
         };
