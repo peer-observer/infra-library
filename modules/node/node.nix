@@ -187,15 +187,21 @@ in
 
       peerinfoSnapshots = {
         enable =
-          lib.mkEnableOption "periodic snapshots of the node's peers using getpeerinfo. Snapshots are compressed with zstd and stored every six hours."
+          lib.mkEnableOption "periodic snapshots of the node's peers using getpeerinfo. Snapshots are compressed with zstd and taken as often as `onCalendar` says."
           // {
             default = true;
           };
-        daysToKeep = lib.mkOption {
+        snapshotsToKeep = lib.mkOption {
           type = lib.types.ints.u16;
-          description = "Number of days of snapshots to keep on the server before deleting them. Snapshots are taken every six hours, so a day is four snapshots.";
-          default = 30;
-          example = 7;
+          description = "Number of snapshots to keep on the server before deleting them. A count rather than an age, so that changing `onCalendar` doesn't change how much is kept.";
+          default = 120;
+          example = 28;
+        };
+        onCalendar = lib.mkOption {
+          type = lib.types.str;
+          description = "When to take a snapshot, as a systemd OnCalendar expression (see systemd.time(7)). Every six hours by default.";
+          default = "*-*-* 00,06,12,18:00:00";
+          example = "hourly";
         };
       };
     };
@@ -781,9 +787,19 @@ in
             DATE=$(date -u +%Y%m%dT%H%M%SZ)
             SNAPSHOT="${CONSTANTS.PEERINFO_SNAPSHOTS_DIR}/peerinfo-$DATE-${config.peer-observer.base.name}.json.zst"
             bitcoin-cli getpeerinfo | ${pkgs.zstd}/bin/zstd -19 -o "$SNAPSHOT"
-            find ${CONSTANTS.PEERINFO_SNAPSHOTS_DIR} -name "peerinfo-*.json.zst" \
-              -mtime +${toString config.peer-observer.node.bitcoind.peerinfoSnapshots.daysToKeep} \
-              -delete
+            # Keep the newest snapshots, delete the rest. Pruning by count
+            # rather than by age keeps the retention independent of
+            # `onCalendar`, which decides how fast they pile up.
+            find ${CONSTANTS.PEERINFO_SNAPSHOTS_DIR} -maxdepth 1 -type f \
+              -name "peerinfo-*.json.zst" -printf '%T@\t%p\n' \
+              | sort -rn \
+              | tail -n +${
+                toString (config.peer-observer.node.bitcoind.peerinfoSnapshots.snapshotsToKeep + 1)
+              } \
+              | while IFS="$(printf '\t')" read -r _mtime path; do
+                  echo "deleting $path, over the ${toString config.peer-observer.node.bitcoind.peerinfoSnapshots.snapshotsToKeep} snapshot limit"
+                  rm -f -- "$path"
+                done
           '';
           serviceConfig = {
             Type = "oneshot";
@@ -795,7 +811,7 @@ in
         {
           wantedBy = [ "timers.target" ];
           timerConfig = {
-            OnCalendar = "*-*-* 00,06,12,18:00:00";
+            OnCalendar = config.peer-observer.node.bitcoind.peerinfoSnapshots.onCalendar;
             Persistent = true;
           };
         };

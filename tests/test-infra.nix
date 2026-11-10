@@ -72,7 +72,7 @@ in
         };
         peerinfoSnapshots = {
           enable = true;
-          daysToKeep = 7;
+          snapshotsToKeep = 28;
         };
         banlistScript = ''
           bitcoin-cli setban 162.218.65.0/24    add 31536000  # LinkingLion
@@ -143,7 +143,7 @@ in
         };
         peerinfoSnapshots = {
           enable = true;
-          daysToKeep = 7;
+          snapshotsToKeep = 28;
         };
         extraConfig = ''
           addnode=node1:18444
