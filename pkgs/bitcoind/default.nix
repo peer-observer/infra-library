@@ -17,8 +17,13 @@
   # to avoid poking out as vXX.99 development builds or as release
   # candidate testers. This is useful when wanting to avoid detection
   # of the honey pot nodes.
-  fakeVersionMajor ? "32",
-  fakeVersionMinor ? "0",
+  #
+  # Unset while the commit below is a release: the patched version would
+  # only restate the one the release already carries. Set both again when
+  # tracking something ahead of a release (master, or a 32.x tip between
+  # releases), where the real version would give the nodes away.
+  fakeVersionMajor ? null,
+  fakeVersionMinor ? null,
   # optional args specifiying which commit, branch and repo to use
   gitURL ? "https://github.com/bitcoin/bitcoin.git",
   gitBranch ? "32.x",
