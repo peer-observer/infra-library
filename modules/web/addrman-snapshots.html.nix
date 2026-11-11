@@ -48,7 +48,11 @@ let
           ${lib.optionalString host.bitcoind.addrmanSnapshots.enable ''
             <li>
               <a href="/addrman-snapshots/${name}/"><code>getrawaddrman</code> snapshots</a>
-              (last ${toString host.bitcoind.addrmanSnapshots.snapshotsToKeep} days)
+              (${
+                lib.optionalString (
+                  host.bitcoind.addrmanSnapshots.onCalendar != "daily"
+                ) "taken <code>${host.bitcoind.addrmanSnapshots.onCalendar}</code>, "
+              }last ${toString host.bitcoind.addrmanSnapshots.snapshotsToKeep} days)
             </li>
           ''}
           ${lib.optionalString host.bitcoind.peersDatSnapshots.enable ''
@@ -80,7 +84,7 @@ stdenv.mkDerivation {
           (mkHTMLPage "peer-observer addrman snapshots" (''
             <h1>peer-observer addrman snapshots</h1>
             <span>
-              Snapshots of each node's address manager are kept: daily
+              Snapshots of each node's address manager are kept: daily (unless noted otherwise)
               <code>getrawaddrman</code> JSON snapshots and raw
               <code>peers.dat</code> files. The <code>peers.dat</code> files are
               easier to work with inside Bitcoin Core for e.g. simulations.
