@@ -159,15 +159,21 @@ in
 
       addrmanSnapshots = {
         enable =
-          lib.mkEnableOption "periodic addrman snapshots using getrawaddrman. Snapshots are compressed with zstd and stored daily."
+          lib.mkEnableOption "periodic addrman snapshots using getrawaddrman. Snapshots are compressed with zstd and taken as often as `onCalendar` says."
           // {
             default = true;
           };
         snapshotsToKeep = lib.mkOption {
           type = lib.types.ints.u16;
-          description = "Number of daily snapshots to keep on the server before deleting them.";
+          description = "Number of days of snapshots to keep on the server before deleting them. With the default daily `onCalendar`, this is the number of snapshots.";
           default = 30;
           example = 7;
+        };
+        onCalendar = lib.mkOption {
+          type = lib.types.str;
+          description = "When to take a snapshot, as a systemd OnCalendar expression (see systemd.time(7)). Daily by default.";
+          default = "daily";
+          example = "*-*-* 00,06,12,18:00:00";
         };
       };
 
@@ -712,7 +718,10 @@ in
             set -e
             shopt -s expand_aliases
             alias bitcoin-cli="${config.services.bitcoind.mainnet.package}/bin/bitcoin-cli -rpcuser=addrman-snapshot -rpcpassword=${CONSTANTS.ADDRMAN_SNAPSHOTS_RPC_PASSWORD}"
-            DATE=$(date +%Y%m%d)
+            # The snapshots can be taken multiple times a day (see onCalendar), so
+            # the timestamp needs to be more granular than a date. UTC, to not
+            # depend on the node's timezone.
+            DATE=$(date -u +%Y%m%dT%H%M%SZ)
             SNAPSHOT="${CONSTANTS.ADDRMAN_SNAPSHOTS_DIR}/addrman-$DATE-${config.peer-observer.base.name}.json.zst"
             bitcoin-cli getrawaddrman | ${pkgs.zstd}/bin/zstd -19 -o "$SNAPSHOT"
             find ${CONSTANTS.ADDRMAN_SNAPSHOTS_DIR} -name "addrman-*.json.zst" \
@@ -729,7 +738,7 @@ in
         {
           wantedBy = [ "timers.target" ];
           timerConfig = {
-            OnCalendar = "daily";
+            OnCalendar = config.peer-observer.node.bitcoind.addrmanSnapshots.onCalendar;
             Persistent = true;
           };
         };
