@@ -58,7 +58,11 @@ let
           ${lib.optionalString host.bitcoind.peersDatSnapshots.enable ''
             <li>
               <a href="/peers-dat-snapshots/${name}/"><code>peers.dat</code> snapshots</a>
-              (last ${toString host.bitcoind.peersDatSnapshots.snapshotsToKeep} days)
+              (${
+                lib.optionalString (
+                  host.bitcoind.peersDatSnapshots.onCalendar != "daily"
+                ) "taken <code>${host.bitcoind.peersDatSnapshots.onCalendar}</code>, "
+              }last ${toString host.bitcoind.peersDatSnapshots.snapshotsToKeep} snapshots)
             </li>
           ''}
         </ul>
