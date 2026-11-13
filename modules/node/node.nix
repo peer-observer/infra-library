@@ -179,15 +179,21 @@ in
 
       peersDatSnapshots = {
         enable =
-          lib.mkEnableOption "periodic snapshots of the node's peers.dat file. Snapshots are compressed with zstd and stored daily."
+          lib.mkEnableOption "periodic snapshots of the node's peers.dat file. Snapshots are compressed with zstd and taken as often as `onCalendar` says."
           // {
             default = true;
           };
         snapshotsToKeep = lib.mkOption {
           type = lib.types.ints.u16;
-          description = "Number of daily snapshots to keep on the server before deleting them.";
+          description = "Number of snapshots to keep on the server before deleting them. A count rather than an age, so that changing `onCalendar` doesn't change how much is kept.";
           default = 30;
           example = 7;
+        };
+        onCalendar = lib.mkOption {
+          type = lib.types.str;
+          description = "When to take a snapshot, as a systemd OnCalendar expression (see systemd.time(7)). Daily by default.";
+          default = "daily";
+          example = "hourly";
         };
       };
 
@@ -752,7 +758,10 @@ in
             # Bitcoin Core writes peers.dat atomically (write to peers.dat.new,
             # then rename) every 15 minutes, so copying it here is safe. The
             # snapshot is at most 15 minutes stale.
-            DATE=$(date +%Y%m%d)
+            # The snapshots can be taken multiple times a day (see onCalendar), so
+            # the timestamp needs to be more granular than a date. UTC, to not
+            # depend on the node's timezone.
+            DATE=$(date -u +%Y%m%dT%H%M%SZ)
             PEERS_DAT="${config.services.bitcoind.mainnet.dataDir}/${
               CONSTANTS.BITCOIND_DATADIR_SUBDIR_BY_CHAIN."${config.peer-observer.node.bitcoind.chain}"
             }peers.dat"
@@ -763,9 +772,19 @@ in
             # would stop nginx from serving it. The open fd also gives us a
             # consistent point-in-time read even if bitcoind rewrites the file.
             ${pkgs.zstd}/bin/zstd -19 -o "$SNAPSHOT" < "$PEERS_DAT"
-            find ${CONSTANTS.PEERS_DAT_SNAPSHOTS_DIR} -name "peers-*.dat.zst" \
-              -mtime +${toString config.peer-observer.node.bitcoind.peersDatSnapshots.snapshotsToKeep} \
-              -delete
+            # Keep the newest snapshots, delete the rest. Pruning by count
+            # rather than by age keeps the retention independent of
+            # `onCalendar`, which decides how fast they pile up.
+            find ${CONSTANTS.PEERS_DAT_SNAPSHOTS_DIR} -maxdepth 1 -type f \
+              -name "peers-*.dat.zst" -printf '%T@\t%p\n' \
+              | sort -rn \
+              | tail -n +${
+                toString (config.peer-observer.node.bitcoind.peersDatSnapshots.snapshotsToKeep + 1)
+              } \
+              | while IFS="$(printf '\t')" read -r _mtime path; do
+                  echo "deleting $path, over the ${toString config.peer-observer.node.bitcoind.peersDatSnapshots.snapshotsToKeep} snapshot limit"
+                  rm -f -- "$path"
+                done
           '';
           serviceConfig = {
             Type = "oneshot";
@@ -777,7 +796,7 @@ in
         {
           wantedBy = [ "timers.target" ];
           timerConfig = {
-            OnCalendar = "daily";
+            OnCalendar = config.peer-observer.node.bitcoind.peersDatSnapshots.onCalendar;
             Persistent = true;
           };
         };
