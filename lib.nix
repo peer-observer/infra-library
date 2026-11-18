@@ -20,6 +20,7 @@ let
       ./modules/web/web.nix
       ./modules/node/node.nix
       ./modules/node/profiling.nix
+      ./modules/nginx-no-http2.nix
 
       agenix.nixosModules.default
 
