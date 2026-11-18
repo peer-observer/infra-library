@@ -14,6 +14,21 @@ let
 
   archiverCfg = config.peer-observer.node.peer-observer.tools.archiver;
 
+  # Dependencies for a peer-observer extractor unit that follow bitcoind
+  # without starting it. `otherWants` are the unit's Wants= other than
+  # network-online.target and bitcoind. See where this is used for why.
+  extractorWithoutPullingInBitcoind =
+    otherWants:
+    let
+      bitcoindUnit = "${config.services.peer-observer.extractors.dependOn}.service";
+    in
+    {
+      wants = lib.mkForce ([ "network-online.target" ] ++ otherWants);
+      requisite = [ bitcoindUnit ];
+      partOf = [ bitcoindUnit ];
+      wantedBy = [ bitcoindUnit ];
+    };
+
   # The archiver instance name. It is the archiver's --base-name, so it is also
   # the prefix of every archive file the instance writes.
   archiverName = suffix: "${archiverCfg.baseName}-${config.peer-observer.base.name}${suffix}";
@@ -381,6 +396,27 @@ in
     # or restarting the whole host). Calling the "stop" RPC also causes the node to be NOT restarted.
     # See https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html#Restart=
     systemd.services.bitcoind-mainnet.serviceConfig.Restart = lib.mkForce "no";
+
+    # The peer-observer extractors have Restart=always and Wants= on bitcoind.
+    # When bitcoind crashes, the extractors exit too, and restarting them pulls
+    # bitcoind back up through the Wants=, which defeats the Restart=no above.
+    # Instead, make bitcoind a Requisite= (an extractor fails to start while
+    # bitcoind isn't running, rather than starting it), and tie the extractors
+    # to bitcoind with PartOf= and WantedBy= so that manually stopping,
+    # starting, or restarting bitcoind does the same to them.
+    systemd.services.peer-observer-ebpf-extractor =
+      mkIf config.services.peer-observer.extractors.ebpf.enable
+        (extractorWithoutPullingInBitcoind [ config.services.peer-observer.dependsOnNATSService ]);
+    systemd.services.peer-observer-rpc-extractor =
+      mkIf config.services.peer-observer.extractors.rpc.enable
+        (extractorWithoutPullingInBitcoind [ config.services.peer-observer.dependsOnNATSService ]);
+    systemd.services.peer-observer-ipc-extractor =
+      mkIf config.services.peer-observer.extractors.ipc.enable
+        (extractorWithoutPullingInBitcoind [ config.services.peer-observer.dependsOnNATSService ]);
+    systemd.services.peer-observer-log-extractor-fifo-pipe =
+      mkIf config.services.peer-observer.extractors.log.enable
+        (extractorWithoutPullingInBitcoind [ ]);
+
     systemd.services.bitcoind-mainnet.serviceConfig.LimitCORE = mkIf (
       config.peer-observer.node.bitcoind.package.sanitizersAddressUndefined
       || config.peer-observer.node.bitcoind.package.sanitizersThread
